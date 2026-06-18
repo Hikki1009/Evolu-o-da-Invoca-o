@@ -813,14 +813,39 @@ function CardBonus({ tipo, meta, xpBonus, status, onConfirmar, onNegar }) {
 // causado pelo componente pai, que causava perda de foco/digitação)
 // ============================================================
 
-function TelaCadastro({ formInicial, onSalvar, onErro }) {
+function TelaCadastro({ formInicial, onSalvar, onLogin, onErro }) {
+  const [modo, setModo] = useState("login"); // "login" | "cadastro"
   const [f, setF] = useState(formInicial);
   const [verificando, setVerificando] = useState(false);
   const imcLocal = calcIMC(f.peso, f.altura);
 
-  async function salvar() {
-    if (!f.nick.trim() || !f.email.trim()) {
-      onErro("Preencha nick e email!");
+  async function fazerLogin() {
+    if (!f.nick.trim() || !f.senha.trim()) {
+      onErro("Preencha nick e senha!");
+      return;
+    }
+    setVerificando(true);
+    const resultado = await firebaseLogin(f.nick.trim(), f.senha.trim());
+    setVerificando(false);
+
+    if (!resultado.ok) {
+      onErro("Não foi possível conectar agora. Tente novamente.");
+      return;
+    }
+    if (!resultado.encontrado) {
+      onErro(`Nick "${f.nick.trim()}" não encontrado. Cadastre-se!`);
+      return;
+    }
+    if (!resultado.senhaCorreta) {
+      onErro("Senha incorreta!");
+      return;
+    }
+    onLogin(resultado.dados);
+  }
+
+  async function fazerCadastro() {
+    if (!f.nick.trim() || !f.senha.trim() || !f.email.trim()) {
+      onErro("Preencha nick, senha e email!");
       return;
     }
     setVerificando(true);
@@ -829,7 +854,7 @@ function TelaCadastro({ formInicial, onSalvar, onErro }) {
 
     if (!resultado.ok) {
       // Se o Firebase estiver indisponível, deixa passar sem bloquear o cadastro
-      // (a sincronização do rank será tentada novamente depois).
+      // (a sincronização será tentada novamente depois).
       onSalvar(f);
       return;
     }
@@ -845,31 +870,61 @@ function TelaCadastro({ formInicial, onSalvar, onErro }) {
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{ fontSize: 48, marginBottom: 8 }}>⚔️</div>
         <div style={{ color: "#fff", fontSize: 24, fontWeight: 800 }}>INVOCAÇÃO DA EVOLUÇÃO</div>
-        <div style={{ color: "#6C0BA9", fontSize: 13, marginTop: 4 }}>Crie seu guerreiro</div>
+        <div style={{ color: "#6C0BA9", fontSize: 13, marginTop: 4 }}>{modo === "login" ? "Entre na sua jornada" : "Crie seu guerreiro"}</div>
       </div>
-      {[
-        { label: "Nick (apelido no jogo)", key: "nick", type: "text", placeholder: "Seu apelido" },
-        { label: "Email", key: "email", type: "email", placeholder: "seu@email.com" },
-        { label: "Peso (kg)", key: "peso", type: "number", placeholder: "Ex: 70" },
-        { label: "Altura (cm)", key: "altura", type: "number", placeholder: "Ex: 175" },
-      ].map(campo => (
-        <div key={campo.key} style={{ marginBottom: 14 }}>
-          <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>{campo.label}</div>
-          <input type={campo.type} placeholder={campo.placeholder} value={f[campo.key]} onChange={e => setF({ ...f, [campo.key]: e.target.value })}
-            style={{ width: "100%", background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15 }} />
-        </div>
-      ))}
-      {imcLocal && (
-        <div style={{ background: "#16213e", border: "1px solid #6C0BA944", borderRadius: 12, padding: 14, marginBottom: 14, textAlign: "center" }}>
-          <div style={{ color: "#888", fontSize: 12 }}>Seu IMC</div>
-          <div style={{ color: "#F1C40F", fontSize: 24, fontWeight: 800 }}>{imcLocal.valor}</div>
-          <div style={{ color: "#ccd6f6", fontSize: 13 }}>{imcLocal.cat}</div>
-          <div style={{ color: "#555", fontSize: 11, marginTop: 4 }}>⚠️ IMC é uma referência. Consulte um médico.</div>
-        </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button onClick={() => setModo("login")} style={{ flex: 1, padding: "10px 0", background: modo === "login" ? "#6C0BA9" : "#16213e", border: `1px solid ${modo === "login" ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Entrar</button>
+        <button onClick={() => setModo("cadastro")} style={{ flex: 1, padding: "10px 0", background: modo === "cadastro" ? "#6C0BA9" : "#16213e", border: `1px solid ${modo === "cadastro" ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Criar conta</button>
+      </div>
+
+      {modo === "login" ? (
+        <>
+          {[
+            { label: "Nick", key: "nick", type: "text", placeholder: "Seu apelido" },
+            { label: "Senha", key: "senha", type: "password", placeholder: "Sua senha" },
+          ].map(campo => (
+            <div key={campo.key} style={{ marginBottom: 14 }}>
+              <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>{campo.label}</div>
+              <input type={campo.type} placeholder={campo.placeholder} value={f[campo.key]} onChange={e => setF({ ...f, [campo.key]: e.target.value })}
+                style={{ width: "100%", background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15 }} />
+            </div>
+          ))}
+          <div style={{ color: "#666", fontSize: 11, marginBottom: 16, textAlign: "center" }}>
+            Esqueceu a senha? Entre em contato usando o email cadastrado para recuperação manual por agora.
+          </div>
+          <button onClick={fazerLogin} disabled={verificando} style={{ width: "100%", padding: "14px 0", background: verificando ? "#444" : "linear-gradient(135deg,#6C0BA9,#9B59B6)", border: "none", borderRadius: 12, color: "#fff", fontWeight: 800, fontSize: 16, cursor: verificando ? "default" : "pointer", marginTop: 6 }}>
+            {verificando ? "Entrando..." : "⚔️ Entrar"}
+          </button>
+        </>
+      ) : (
+        <>
+          {[
+            { label: "Nick (apelido no jogo)", key: "nick", type: "text", placeholder: "Seu apelido" },
+            { label: "Senha", key: "senha", type: "password", placeholder: "Crie uma senha" },
+            { label: "Email (para recuperação)", key: "email", type: "email", placeholder: "seu@email.com" },
+            { label: "Peso (kg)", key: "peso", type: "number", placeholder: "Ex: 70" },
+            { label: "Altura (cm)", key: "altura", type: "number", placeholder: "Ex: 175" },
+          ].map(campo => (
+            <div key={campo.key} style={{ marginBottom: 14 }}>
+              <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>{campo.label}</div>
+              <input type={campo.type} placeholder={campo.placeholder} value={f[campo.key]} onChange={e => setF({ ...f, [campo.key]: e.target.value })}
+                style={{ width: "100%", background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 10, padding: "12px 14px", color: "#fff", fontSize: 15 }} />
+            </div>
+          ))}
+          {imcLocal && (
+            <div style={{ background: "#16213e", border: "1px solid #6C0BA944", borderRadius: 12, padding: 14, marginBottom: 14, textAlign: "center" }}>
+              <div style={{ color: "#888", fontSize: 12 }}>Seu IMC</div>
+              <div style={{ color: "#F1C40F", fontSize: 24, fontWeight: 800 }}>{imcLocal.valor}</div>
+              <div style={{ color: "#ccd6f6", fontSize: 13 }}>{imcLocal.cat}</div>
+              <div style={{ color: "#555", fontSize: 11, marginTop: 4 }}>⚠️ IMC é uma referência. Consulte um médico.</div>
+            </div>
+          )}
+          <button onClick={fazerCadastro} disabled={verificando} style={{ width: "100%", padding: "14px 0", background: verificando ? "#444" : "linear-gradient(135deg,#6C0BA9,#9B59B6)", border: "none", borderRadius: 12, color: "#fff", fontWeight: 800, fontSize: 16, cursor: verificando ? "default" : "pointer", marginTop: 6 }}>
+            {verificando ? "Verificando nick..." : "⚔️ Iniciar Jornada!"}
+          </button>
+        </>
       )}
-      <button onClick={salvar} disabled={verificando} style={{ width: "100%", padding: "14px 0", background: verificando ? "#444" : "linear-gradient(135deg,#6C0BA9,#9B59B6)", border: "none", borderRadius: 12, color: "#fff", fontWeight: 800, fontSize: 16, cursor: verificando ? "default" : "pointer", marginTop: 6 }}>
-        {verificando ? "Verificando nick..." : "⚔️ Iniciar Jornada!"}
-      </button>
     </div>
   );
 }
@@ -1058,15 +1113,20 @@ function useAudioAmbiente() {
 // MÚSICA DE FUNDO REAL (arquivos do usuário, por tela)
 // ============================================================
 
+const MUSICA_AMBIENTE = "https://files.catbox.moe/yvfkly.mp3";
 const MUSICAS_POR_TELA = {
-  home: "https://files.catbox.moe/yvfkly.mp3",
+  home: MUSICA_AMBIENTE,
+  missao: MUSICA_AMBIENTE,
+  progresso: MUSICA_AMBIENTE,
+  rank: MUSICA_AMBIENTE,
+  perfil: MUSICA_AMBIENTE,
   historia: "https://files.catbox.moe/gqebex.mp3",
   medalhas: "https://files.catbox.moe/j47l1z.mp3",
 };
 
 function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
   const audioElRef = useRef(null);
-  const telaAnteriorRef = useRef(null);
+  const srcAtualRef = useRef(null); // qual música (src) está tocando agora, para não recarregar à toa
   const [statusMusica, setStatusMusica] = useState({}); // { home: "carregando"|"tocando"|"erro", ... }
   const [ultimoErro, setUltimoErro] = useState(null);
 
@@ -1075,6 +1135,7 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
       const el = new Audio();
       el.loop = true;
       el.volume = 0.35;
+      el.preload = "auto";
       audioElRef.current = el;
 
       el.addEventListener("error", () => {
@@ -1087,13 +1148,13 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
         };
         const msg = mensagens[codigo] || "Erro desconhecido ao carregar música";
         setUltimoErro(msg);
-        setStatusMusica(prev => ({ ...prev, [telaAnteriorRef.current]: "erro" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtual]: "erro" }));
       });
       el.addEventListener("canplay", () => {
-        setStatusMusica(prev => ({ ...prev, [telaAnteriorRef.current]: "tocando" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtual]: "tocando" }));
       });
       el.addEventListener("waiting", () => {
-        setStatusMusica(prev => ({ ...prev, [telaAnteriorRef.current]: "carregando" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtual]: "carregando" }));
       });
     }
   }, []);
@@ -1110,13 +1171,16 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
     }
 
     if (src) {
-      // Esta tela tem música própria: silencia o drone sintético e toca a faixa real
+      // Esta tela tem música própria: silencia o drone sintético e toca a faixa real.
+      // Se a música já é a mesma que está tocando (ex: troca entre Início/Missão/Progresso,
+      // que compartilham a mesma faixa ambiente), NÃO recarrega o arquivo — só garante
+      // que está tocando. Isso elimina a demora/corte ao trocar entre essas telas.
       pararDrone?.();
-      if (telaAnteriorRef.current !== telaAtual) {
-        telaAnteriorRef.current = telaAtual;
+      if (srcAtualRef.current !== src) {
+        srcAtualRef.current = src;
         setStatusMusica(prev => ({ ...prev, [telaAtual]: "carregando" }));
         setUltimoErro(null);
-        if (el.src !== src) el.src = src;
+        el.src = src;
         el.play().catch(err => {
           setUltimoErro(`Bloqueio de reprodução: ${err.message || "autoplay não permitido"}`);
           setStatusMusica(prev => ({ ...prev, [telaAtual]: "erro" }));
@@ -1128,12 +1192,10 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
         });
       }
     } else {
-      // Tela sem música própria: para a faixa real e retoma o drone ambiente
+      // Tela sem música própria definida: para a faixa real e retoma o drone ambiente
       el.pause();
-      if (telaAnteriorRef.current !== telaAtual) {
-        telaAnteriorRef.current = telaAtual;
-        retomarDrone?.();
-      }
+      srcAtualRef.current = null;
+      retomarDrone?.();
     }
   }, [telaAtual, ligado]);
 
@@ -1157,7 +1219,7 @@ const FIREBASE_DB_URL = "https://invocacaodaevolucao-default-rtdb.firebaseio.com
 async function firebaseSalvarJogador(nick, dados) {
   try {
     const res = await fetch(`${FIREBASE_DB_URL}/jogadores/${encodeURIComponent(nick)}.json`, {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados),
     });
@@ -1177,6 +1239,15 @@ async function firebaseBuscarJogador(nick) {
   } catch (err) {
     return { ok: false, erro: err.message };
   }
+}
+
+// Tenta logar com nick + senha. Retorna o progresso salvo do jogador se a senha bater.
+async function firebaseLogin(nick, senha) {
+  const resultado = await firebaseBuscarJogador(nick);
+  if (!resultado.ok) return { ok: false, erro: resultado.erro };
+  if (!resultado.existe) return { ok: true, encontrado: false };
+  if (resultado.dados?.senha !== senha) return { ok: true, encontrado: true, senhaCorreta: false };
+  return { ok: true, encontrado: true, senhaCorreta: true, dados: resultado.dados };
 }
 
 async function firebaseBuscarTodosJogadores() {
@@ -1237,13 +1308,17 @@ export default function FitnessRPG() {
   const [mostrarCreditos, setMostrarCreditos] = useState(false);
   const [notif, setNotif] = useState({ msg: "", tipo: "" });
 
-  const [form, setForm] = useState({ nick: "", email: "", peso: "", altura: "" });
+  const [form, setForm] = useState({ nick: "", senha: "", email: "", peso: "", altura: "" });
 
   const fase = getFase(nivel);
   const xpMax = nivel * 100;
   const missoes = getMissoes(nivel);
   const imc = usuario ? calcIMC(usuario.peso, usuario.altura) : null;
-  const metaAgua = nivel < 20 ? "2,0L" : nivel < 50 ? "2,5L" : nivel < 90 ? "3,0L" : "3,5L";
+  // Meta de água calculada pela fórmula 35ml por kg de peso corporal,
+  // usando o peso informado no cadastro. Se não houver peso válido, usa um valor padrão.
+  const pesoNumerico = parseFloat(String(usuario?.peso).replace(",", "."));
+  const metaAguaLitros = pesoNumerico > 0 ? (pesoNumerico * 35) / 1000 : 2.5;
+  const metaAgua = `${metaAguaLitros.toFixed(1).replace(".", ",")}L`;
   const metaSono = nivel < 20 ? "7–8h" : nivel < 50 ? "7–9h" : nivel < 90 ? "8–9h" : "8–10h";
   const xpBonusAgua = nivel < 20 ? 15 : nivel < 50 ? 20 : nivel < 90 ? 25 : 30;
   const xpBonusSono = xpBonusAgua;
@@ -1267,23 +1342,51 @@ export default function FitnessRPG() {
     return Math.max(0, totalSeg - passados);
   }
 
-  // Sincroniza os dados do jogador com o Firebase sempre que algo relevante
-  // para o rank mudar (nível, medalhas, missões, sequência de dias).
+  // Sincroniza o progresso completo do jogador com o Firebase sempre que algo
+  // relevante mudar. Isso permite restaurar o jogo inteiro ao fazer login de novo
+  // (em qualquer dispositivo), além de manter o rank atualizado.
   // Roda em segundo plano — se falhar (sem internet, Firebase fora do ar),
-  // não afeta o uso normal do app, só o rank fica desatualizado até a próxima sincronização.
+  // não afeta o uso normal do app, só a sincronização fica pendente até a próxima tentativa.
   useEffect(() => {
     if (!usuario?.nick) return;
-    const dadosParaRank = {
+    const progressoCompleto = {
       nick: usuario.nick,
-      nivel,
-      totalMissoes,
-      diasConsecutivos,
+      senha: usuario.senha,
+      email: usuario.email,
+      peso: usuario.peso,
+      altura: usuario.altura,
+      nivel, xp, xpTotal, totalMissoes, diasConsecutivos, diasTreinados,
+      totalAgua, totalSono, missoesChefeFeitas, eventosBrCompletos,
+      medalhas, historico, capitulosLidos, microHistoriasVistas, microHistoriasFeitas,
+      creditosVistos,
       totalMedalhas: medalhas.length,
       criadoEm: criadoEm || Date.now(),
       atualizadoEm: Date.now(),
     };
-    firebaseSalvarJogador(usuario.nick, dadosParaRank);
-  }, [usuario?.nick, nivel, totalMissoes, diasConsecutivos, medalhas.length, criadoEm]);
+    firebaseSalvarJogador(usuario.nick, progressoCompleto);
+  }, [usuario, nivel, xp, xpTotal, totalMissoes, diasConsecutivos, diasTreinados, totalAgua, totalSono, missoesChefeFeitas, eventosBrCompletos, medalhas, historico, capitulosLidos, microHistoriasVistas, microHistoriasFeitas, creditosVistos, criadoEm]);
+
+  // Restaura todo o progresso do jogador a partir dos dados salvos no Firebase
+  // (chamado depois de um login bem-sucedido).
+  function restaurarProgresso(dados) {
+    setNivel(dados.nivel ?? 1);
+    setXp(dados.xp ?? 0);
+    setXpTotal(dados.xpTotal ?? 0);
+    setTotalMissoes(dados.totalMissoes ?? 0);
+    setDiasConsecutivos(dados.diasConsecutivos ?? 0);
+    setDiasTreinados(dados.diasTreinados ?? 0);
+    setTotalAgua(dados.totalAgua ?? 0);
+    setTotalSono(dados.totalSono ?? 0);
+    setMissoesChefeFeitas(dados.missoesChefeFeitas ?? 0);
+    setEventosBrCompletos(dados.eventosBrCompletos ?? 0);
+    setMedalhas(dados.medalhas ?? []);
+    setHistorico(dados.historico ?? []);
+    setCapitulosLidos(dados.capitulosLidos ?? []);
+    setMicroHistoriasVistas(dados.microHistoriasVistas ?? []);
+    setMicroHistoriasFeitas(dados.microHistoriasFeitas ?? []);
+    setCreditosVistos(dados.creditosVistos ?? false);
+    setCriadoEm(dados.criadoEm ?? Date.now());
+  }
 
   // Verificar capítulos desbloqueados
   function verificarCapitulo(novoNivel) {
@@ -2095,6 +2198,13 @@ export default function FitnessRPG() {
           setCriadoEm(Date.now());
           const prologo = CAPITULOS.find(c => c.id === "prologo");
           setCapituloAtivo(prologo);
+          setTela("home");
+        }}
+        onLogin={(dados) => {
+          setUsuario({ nick: dados.nick, senha: dados.senha, email: dados.email, peso: dados.peso, altura: dados.altura });
+          setForm({ nick: dados.nick, senha: dados.senha, email: dados.email, peso: dados.peso, altura: dados.altura });
+          restaurarProgresso(dados);
+          notificar(`Bem-vindo de volta, ${dados.nick}!`, "sucesso");
           setTela("home");
         }}
       />
