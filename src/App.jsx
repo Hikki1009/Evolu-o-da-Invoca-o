@@ -513,6 +513,15 @@ function ehFimDeSemana() {
   return d === 0 || d === 6;
 }
 
+// Retorna a data de hoje no formato "AAAA-MM-DD", usada para identificar
+// se a missão/bônus do dia já foram sorteados/confirmados hoje, evitando
+// que saindo e voltando do app a pessoa consiga repetir o sorteio ou os
+// bônus de água/sono no mesmo dia.
+function dataDeHoje() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function sortear(lista) { return lista[Math.floor(Math.random() * lista.length)]; }
 
 function duracaoParaSegundos(dur) {
@@ -930,6 +939,92 @@ function TelaCadastro({ formInicial, onSalvar, onLogin, onErro }) {
 }
 
 // ============================================================
+// TELA RANK (componente independente — evita o "piscar" causado
+// pelo re-render do componente pai, que recriava esta função a
+// cada render e reiniciava o carregamento dos dados)
+// ============================================================
+
+function TelaRank({ usuarioNick }) {
+  const [jogadores, setJogadores] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(null);
+  const [criterioOrdem, setCriterioOrdem] = useState("nivel"); // nivel | totalMissoes | diasConsecutivos | totalMedalhas
+
+  async function carregar() {
+    setCarregando(true);
+    setErro(null);
+    const resultado = await firebaseBuscarTodosJogadores();
+    setCarregando(false);
+    if (!resultado.ok) {
+      setErro(resultado.erro || "Não foi possível carregar o rank agora.");
+      return;
+    }
+    setJogadores(resultado.jogadores);
+  }
+
+  useEffect(() => { carregar(); }, []);
+
+  const ordenados = [...jogadores].sort((a, b) => (b[criterioOrdem] || 0) - (a[criterioOrdem] || 0));
+  const criterios = [
+    { id: "nivel", label: "Nível", emoji: "⚔️" },
+    { id: "totalMissoes", label: "Missões", emoji: "✅" },
+    { id: "diasConsecutivos", label: "Sequência", emoji: "🔥" },
+    { id: "totalMedalhas", label: "Medalhas", emoji: "🏅" },
+  ];
+
+  return (
+    <div style={{ padding: "16px 16px 90px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <h2 style={{ color: "#fff", fontSize: 17, fontWeight: 700, margin: 0 }}>🏆 Rank dos Guerreiros</h2>
+        <button onClick={carregar} style={{ background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 8, padding: "6px 10px", color: "#888", fontSize: 12, cursor: "pointer" }}>🔄</button>
+      </div>
+      <div style={{ color: "#666", fontSize: 12, marginBottom: 16 }}>Comparação entre todos os jogadores do app</div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto" }}>
+        {criterios.map(c => (
+          <button key={c.id} onClick={() => setCriterioOrdem(c.id)} style={{ flexShrink: 0, background: criterioOrdem === c.id ? "#6C0BA933" : "#16213e", border: `1px solid ${criterioOrdem === c.id ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 20, padding: "7px 14px", color: criterioOrdem === c.id ? "#c8a8e8" : "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {c.emoji} {c.label}
+          </button>
+        ))}
+      </div>
+
+      {carregando && (
+        <div style={{ textAlign: "center", padding: 40, color: "#666" }}>⏳ Carregando rank...</div>
+      )}
+
+      {!carregando && erro && (
+        <div style={{ background: "#E74C3C18", border: "1px solid #E74C3C44", borderRadius: 12, padding: 16, textAlign: "center" }}>
+          <div style={{ color: "#ff8a8a", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Rank indisponível agora</div>
+          <div style={{ color: "#ff8a8a99", fontSize: 12 }}>{erro}</div>
+        </div>
+      )}
+
+      {!carregando && !erro && ordenados.length === 0 && (
+        <div style={{ textAlign: "center", padding: 40, color: "#666" }}>Nenhum guerreiro no rank ainda. Seja o primeiro!</div>
+      )}
+
+      {!carregando && !erro && ordenados.map((j, i) => {
+        const souEu = usuarioNick === j.nick;
+        const medalhaPosicao = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+        const dataCriacao = formatarDataCriacao(j.criadoEm);
+        return (
+          <div key={j.nick} style={{ display: "flex", alignItems: "center", gap: 12, background: souEu ? "#6C0BA922" : "#16213e", border: `1px solid ${souEu ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+            <div style={{ width: 28, textAlign: "center", fontSize: medalhaPosicao ? 20 : 13, color: "#888", fontWeight: 700 }}>
+              {medalhaPosicao || `#${i + 1}`}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: souEu ? "#c8a8e8" : "#ccd6f6", fontWeight: 700, fontSize: 14 }}>{j.nick} {souEu && "(você)"}</div>
+              <div style={{ color: "#666", fontSize: 11 }}>Nível {j.nivel || 1} • {j.totalMissoes || 0} missões • 🔥{j.diasConsecutivos || 0} dias • 🏅{j.totalMedalhas || 0}</div>
+              {dataCriacao && <div style={{ color: "#555", fontSize: 10, marginTop: 2 }}>🗓️ Guerreiro desde {dataCriacao}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // APP PRINCIPAL
 // ============================================================
 
@@ -1127,8 +1222,13 @@ const MUSICAS_POR_TELA = {
 function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
   const audioElRef = useRef(null);
   const srcAtualRef = useRef(null); // qual música (src) está tocando agora, para não recarregar à toa
+  const telaAtualRef = useRef(telaAtual); // sempre atualizada, para os listeners (que são criados 1x) saberem a tela certa
   const [statusMusica, setStatusMusica] = useState({}); // { home: "carregando"|"tocando"|"erro", ... }
   const [ultimoErro, setUltimoErro] = useState(null);
+
+  useEffect(() => {
+    telaAtualRef.current = telaAtual;
+  }, [telaAtual]);
 
   useEffect(() => {
     if (!audioElRef.current) {
@@ -1138,6 +1238,10 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
       el.preload = "auto";
       audioElRef.current = el;
 
+      // Os listeners abaixo são registrados apenas uma vez (quando o elemento de áudio
+      // é criado), então usamos telaAtualRef.current (sempre atualizada) em vez de
+      // telaAtual diretamente — isso evita o bug de "música já tocou mas a tela continua
+      // mostrando carregando", que acontecia porque o listener guardava a tela antiga.
       el.addEventListener("error", () => {
         const codigo = el.error?.code;
         const mensagens = {
@@ -1148,13 +1252,16 @@ function useMusicaPorTela(telaAtual, ligado, pararDrone, retomarDrone) {
         };
         const msg = mensagens[codigo] || "Erro desconhecido ao carregar música";
         setUltimoErro(msg);
-        setStatusMusica(prev => ({ ...prev, [telaAtual]: "erro" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtualRef.current]: "erro" }));
       });
       el.addEventListener("canplay", () => {
-        setStatusMusica(prev => ({ ...prev, [telaAtual]: "tocando" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtualRef.current]: "tocando" }));
+      });
+      el.addEventListener("playing", () => {
+        setStatusMusica(prev => ({ ...prev, [telaAtualRef.current]: "tocando" }));
       });
       el.addEventListener("waiting", () => {
-        setStatusMusica(prev => ({ ...prev, [telaAtual]: "carregando" }));
+        setStatusMusica(prev => ({ ...prev, [telaAtualRef.current]: "carregando" }));
       });
     }
   }, []);
@@ -1286,6 +1393,7 @@ export default function FitnessRPG() {
   const [microHistoriasFeitas, setMicroHistoriasFeitas] = useState([]); // ids já concluídas
 
   const [missaoAtual, setMissaoAtual] = useState(null);
+  const [diaMissaoAtual, setDiaMissaoAtual] = useState(null); // "AAAA-MM-DD" do dia em que a missão foi sorteada
   const [missaoExtra, setMissaoExtra] = useState(null);
   const [statusMissao, setStatusMissao] = useState(null);
   const [statusExtra, setStatusExtra] = useState(null);
@@ -1325,6 +1433,30 @@ export default function FitnessRPG() {
 
   function notificar(msg, tipo = "info") { setNotif({ msg, tipo }); }
 
+  // Verifica se o dia mudou desde a última missão sorteada. Se sim, libera o
+  // sorteio de uma nova missão e reseta os bônus de água/sono — exatamente como
+  // se fosse a virada do dia. Isso impede que saindo e voltando do app no MESMO
+  // dia a pessoa consiga sortear missão de novo ou repetir os bônus diários.
+  // Roda ao abrir o app e sempre que a tela muda (cobre o caso de deixar o app
+  // aberto em segundo plano passando da meia-noite).
+  useEffect(() => {
+    if (!usuario?.nick) return;
+    const hoje = dataDeHoje();
+    if (diaMissaoAtual && diaMissaoAtual !== hoje) {
+      // Virou o dia: a missão de ontem (se não foi concluída/falhada a tempo) é descartada,
+      // e os bônus de água/sono voltam a ficar disponíveis para hoje.
+      setMissaoAtual(null);
+      setMissaoExtra(null);
+      setStatusMissao(null);
+      setStatusExtra(null);
+      setInicioMissao(null);
+      setInicioExtra(null);
+      setAguaStatus(null);
+      setSonoStatus(null);
+      setDiaMissaoAtual(null);
+    }
+  }, [usuario?.nick, tela]);
+
   // Relógio: atualiza a cada segundo SOMENTE quando há uma missão com cronômetro
   // ativo aguardando decisão. Isso evita re-renderizar o app inteiro (e, com isso,
   // perder o foco dos campos de cadastro/perfil) quando não há timer rodando.
@@ -1344,7 +1476,9 @@ export default function FitnessRPG() {
 
   // Sincroniza o progresso completo do jogador com o Firebase sempre que algo
   // relevante mudar. Isso permite restaurar o jogo inteiro ao fazer login de novo
-  // (em qualquer dispositivo), além de manter o rank atualizado.
+  // (em qualquer dispositivo), além de manter o rank atualizado. Também salva o
+  // estado do "dia do jogo" (missão sorteada, água/sono) para impedir que saindo
+  // e voltando do app a pessoa consiga repetir sorteios ou bônus no mesmo dia.
   // Roda em segundo plano — se falhar (sem internet, Firebase fora do ar),
   // não afeta o uso normal do app, só a sincronização fica pendente até a próxima tentativa.
   useEffect(() => {
@@ -1359,15 +1493,20 @@ export default function FitnessRPG() {
       totalAgua, totalSono, missoesChefeFeitas, eventosBrCompletos,
       medalhas, historico, capitulosLidos, microHistoriasVistas, microHistoriasFeitas,
       creditosVistos,
+      // Estado do dia atual: impede repetição de sorteio/bônus saindo e voltando do app
+      diaMissaoAtual, missaoAtual, missaoExtra, statusMissao, statusExtra,
+      inicioMissao, inicioExtra, aguaStatus, sonoStatus, multiplicador,
       totalMedalhas: medalhas.length,
       criadoEm: criadoEm || Date.now(),
       atualizadoEm: Date.now(),
     };
     firebaseSalvarJogador(usuario.nick, progressoCompleto);
-  }, [usuario, nivel, xp, xpTotal, totalMissoes, diasConsecutivos, diasTreinados, totalAgua, totalSono, missoesChefeFeitas, eventosBrCompletos, medalhas, historico, capitulosLidos, microHistoriasVistas, microHistoriasFeitas, creditosVistos, criadoEm]);
+  }, [usuario, nivel, xp, xpTotal, totalMissoes, diasConsecutivos, diasTreinados, totalAgua, totalSono, missoesChefeFeitas, eventosBrCompletos, medalhas, historico, capitulosLidos, microHistoriasVistas, microHistoriasFeitas, creditosVistos, criadoEm, diaMissaoAtual, missaoAtual, missaoExtra, statusMissao, statusExtra, inicioMissao, inicioExtra, aguaStatus, sonoStatus, multiplicador]);
 
   // Restaura todo o progresso do jogador a partir dos dados salvos no Firebase
-  // (chamado depois de um login bem-sucedido).
+  // (chamado depois de um login bem-sucedido). Também restaura o estado do dia
+  // atual (missão sorteada, água/sono) — a verificação de virada de dia (useEffect
+  // acima) cuida de limpar isso automaticamente se já não for mais "hoje".
   function restaurarProgresso(dados) {
     setNivel(dados.nivel ?? 1);
     setXp(dados.xp ?? 0);
@@ -1386,6 +1525,21 @@ export default function FitnessRPG() {
     setMicroHistoriasFeitas(dados.microHistoriasFeitas ?? []);
     setCreditosVistos(dados.creditosVistos ?? false);
     setCriadoEm(dados.criadoEm ?? Date.now());
+    // Restaura o estado do dia atual, só se for de fato o dia de hoje.
+    // Se for de um dia anterior, deixa tudo null/limpo (não restaura missão velha).
+    const hoje = dataDeHoje();
+    if (dados.diaMissaoAtual === hoje) {
+      setDiaMissaoAtual(dados.diaMissaoAtual ?? null);
+      setMissaoAtual(dados.missaoAtual ?? null);
+      setMissaoExtra(dados.missaoExtra ?? null);
+      setStatusMissao(dados.statusMissao ?? null);
+      setStatusExtra(dados.statusExtra ?? null);
+      setInicioMissao(dados.inicioMissao ?? null);
+      setInicioExtra(dados.inicioExtra ?? null);
+      setAguaStatus(dados.aguaStatus ?? null);
+      setSonoStatus(dados.sonoStatus ?? null);
+      setMultiplicador(dados.multiplicador ?? 1);
+    }
   }
 
   // Verificar capítulos desbloqueados
@@ -1487,6 +1641,7 @@ export default function FitnessRPG() {
     if (evento && !modalEvento) setModalEvento(evento);
     const mult = ehFimDeSemana() ? 2 : 1;
     setMissaoAtual(nova);
+    setDiaMissaoAtual(dataDeHoje());
     setMissaoExtra(null);
     setStatusMissao(null);
     setStatusExtra(null);
@@ -1859,85 +2014,7 @@ export default function FitnessRPG() {
   }
 
   // ── TELA RANK ──────────────────────────────────────────────
-  function TelaRank() {
-    const [jogadores, setJogadores] = useState([]);
-    const [carregando, setCarregando] = useState(true);
-    const [erro, setErro] = useState(null);
-    const [criterioOrdem, setCriterioOrdem] = useState("nivel"); // nivel | totalMissoes | diasConsecutivos | totalMedalhas
-
-    async function carregar() {
-      setCarregando(true);
-      setErro(null);
-      const resultado = await firebaseBuscarTodosJogadores();
-      setCarregando(false);
-      if (!resultado.ok) {
-        setErro(resultado.erro || "Não foi possível carregar o rank agora.");
-        return;
-      }
-      setJogadores(resultado.jogadores);
-    }
-
-    useEffect(() => { carregar(); }, []);
-
-    const ordenados = [...jogadores].sort((a, b) => (b[criterioOrdem] || 0) - (a[criterioOrdem] || 0));
-    const criterios = [
-      { id: "nivel", label: "Nível", emoji: "⚔️" },
-      { id: "totalMissoes", label: "Missões", emoji: "✅" },
-      { id: "diasConsecutivos", label: "Sequência", emoji: "🔥" },
-      { id: "totalMedalhas", label: "Medalhas", emoji: "🏅" },
-    ];
-
-    return (
-      <div style={{ padding: "16px 16px 90px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <h2 style={{ color: "#fff", fontSize: 17, fontWeight: 700, margin: 0 }}>🏆 Rank dos Guerreiros</h2>
-          <button onClick={carregar} style={{ background: "#16213e", border: "1px solid #1e3a5f", borderRadius: 8, padding: "6px 10px", color: "#888", fontSize: 12, cursor: "pointer" }}>🔄</button>
-        </div>
-        <div style={{ color: "#666", fontSize: 12, marginBottom: 16 }}>Comparação entre todos os jogadores do app</div>
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto" }}>
-          {criterios.map(c => (
-            <button key={c.id} onClick={() => setCriterioOrdem(c.id)} style={{ flexShrink: 0, background: criterioOrdem === c.id ? "#6C0BA933" : "#16213e", border: `1px solid ${criterioOrdem === c.id ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 20, padding: "7px 14px", color: criterioOrdem === c.id ? "#c8a8e8" : "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              {c.emoji} {c.label}
-            </button>
-          ))}
-        </div>
-
-        {carregando && (
-          <div style={{ textAlign: "center", padding: 40, color: "#666" }}>⏳ Carregando rank...</div>
-        )}
-
-        {!carregando && erro && (
-          <div style={{ background: "#E74C3C18", border: "1px solid #E74C3C44", borderRadius: 12, padding: 16, textAlign: "center" }}>
-            <div style={{ color: "#ff8a8a", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Rank indisponível agora</div>
-            <div style={{ color: "#ff8a8a99", fontSize: 12 }}>{erro}</div>
-          </div>
-        )}
-
-        {!carregando && !erro && ordenados.length === 0 && (
-          <div style={{ textAlign: "center", padding: 40, color: "#666" }}>Nenhum guerreiro no rank ainda. Seja o primeiro!</div>
-        )}
-
-        {!carregando && !erro && ordenados.map((j, i) => {
-          const souEu = usuario?.nick === j.nick;
-          const medalhaPosicao = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
-          const dataCriacao = formatarDataCriacao(j.criadoEm);
-          return (
-            <div key={j.nick} style={{ display: "flex", alignItems: "center", gap: 12, background: souEu ? "#6C0BA922" : "#16213e", border: `1px solid ${souEu ? "#6C0BA9" : "#1e3a5f"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
-              <div style={{ width: 28, textAlign: "center", fontSize: medalhaPosicao ? 20 : 13, color: "#888", fontWeight: 700 }}>
-                {medalhaPosicao || `#${i + 1}`}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: souEu ? "#c8a8e8" : "#ccd6f6", fontWeight: 700, fontSize: 14 }}>{j.nick} {souEu && "(você)"}</div>
-                <div style={{ color: "#666", fontSize: 11 }}>Nível {j.nivel || 1} • {j.totalMissoes || 0} missões • 🔥{j.diasConsecutivos || 0} dias • 🏅{j.totalMedalhas || 0}</div>
-                {dataCriacao && <div style={{ color: "#555", fontSize: 10, marginTop: 2 }}>🗓️ Guerreiro desde {dataCriacao}</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
+  // (TelaRank agora é um componente independente, definido fora do FitnessRPG — ver abaixo)
 
   // ── TELA PERFIL ────────────────────────────────────────────
   function TelaPerfil() {
@@ -2211,7 +2288,7 @@ export default function FitnessRPG() {
     </div>
   );
 
-  const TELAS = { home: <TelaHome />, missao: <TelaMissao />, historia: <TelaHistoria />, medalhas: <TelaMedalhas />, progresso: <TelaProgresso />, rank: <TelaRank />, perfil: <TelaPerfil /> };
+  const TELAS = { home: <TelaHome />, missao: <TelaMissao />, historia: <TelaHistoria />, medalhas: <TelaMedalhas />, progresso: <TelaProgresso />, rank: <TelaRank usuarioNick={usuario?.nick} />, perfil: <TelaPerfil /> };
   const NAV = [
     { id: "home", emoji: "🏠", label: "Início" },
     { id: "missao", emoji: "⚔️", label: "Missão" },
